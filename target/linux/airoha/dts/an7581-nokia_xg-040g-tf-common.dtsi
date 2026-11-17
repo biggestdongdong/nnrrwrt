@@ -9,8 +9,8 @@
 		/delete-node/ led-5;
 	};
 
-	/delete-node/ regulator-usb-5v;
-	/delete-node/ usb-power;
+	/delete-node/ regulator-usb1-vbus;
+	/delete-node/ regulator-usb2-vbus;
 };
 
 /* The TF internal Gigabit PHY uses phylib polling. */
@@ -29,6 +29,7 @@
 &usb0 {
 	status = "disabled";
 
+	/delete-property/ vbus-supply;
 	/delete-property/ vusb33-supply;
 	/delete-node/ port@1;
 };
@@ -38,6 +39,7 @@
 
 	/delete-property/ mediatek,u3p-dis-msk;
 	/delete-property/ phys;
+	/delete-property/ vbus-supply;
 	/delete-property/ vusb33-supply;
 	/delete-node/ port@1;
 };

@@ -346,7 +346,7 @@ define Device/nokia_xg-040g-md-common
   PAGESIZE := 2048
   UBINIZE_OPTS := -E 5
   DEVICE_PACKAGES := kmod-gpio-button-hotplug kmod-leds-gpio \
-    kmod-phy-airoha-en8811h kmod-regulator-userspace-consumer \
+    kmod-phy-airoha-en8811h \
     kmod-usb-ledtrig-usbport kmod-usb3 kmod-airoha-en7572 \
     kmod-airoha-xpon airoha-ponctl airoha-pond \
     $(AIROHA_USB_STORAGE_PACKAGES)
@@ -355,8 +355,7 @@ endef
 define Device/nokia_xg-040g-tf-common
   $(call Device/nokia_xg-040g-md-common)
   DEVICE_MODEL := XG-040G-TF
-  DEVICE_PACKAGES += -kmod-regulator-userspace-consumer \
-    -kmod-usb-ledtrig-usbport -kmod-usb3 \
+  DEVICE_PACKAGES += -kmod-usb-ledtrig-usbport -kmod-usb3 \
     $(addprefix -,$(AIROHA_USB_STORAGE_PACKAGES))
 endef
 
