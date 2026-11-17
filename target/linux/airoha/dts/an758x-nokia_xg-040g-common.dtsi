@@ -57,9 +57,9 @@
 &gdm2 {
 	/* GDM2 carries the PON GEM data plane on AN7581 and AN7583. */
 	airoha,pon-data-path;
-	/* WAN uses the eth0 MAC stored at RI offset 0x3e. */
+	/* Stock hcfg.conf assigns Wan.Mac.Offset=1 and Lan.Mac.Offset=0. */
 	nvmem-cell-names = "mac-address";
-	nvmem-cells = <&macaddr_factory_3e 0>;
+	nvmem-cells = <&macaddr_factory_3e 1>;
 	status = "okay";
 };
 
@@ -81,5 +81,5 @@
 	status = "okay";
 
 	nvmem-cell-names = "mac-address";
-	nvmem-cells = <&macaddr_factory_3e 1>;
+	nvmem-cells = <&macaddr_factory_3e 0>;
 };
