@@ -1,0 +1,31 @@
+From: grislux55 <jebchou.hg@gmail.com>
+Subject: [PATCH] net: dsa: mt7530: disable MAC EEE capabilities on EN7581
+
+Stock AN7581 eth_ephy clears MDIO_AN_EEE_ADV (0x7:0x3c = 0) in
+normalinit() and disables LPI on internal GSW ports. Match ID_EN7528 in
+mt753x_phylink_get_caps() by leaving lpi_capabilities and
+lpi_interfaces empty on ID_EN7581 so phylink keeps MAC LPI disabled and
+rejects enabling EEE from userspace.
+
+Signed-off-by: grislux55 <jebchou.hg@gmail.com>
+---
+--- a/drivers/net/dsa/mt7530.c
++++ b/drivers/net/dsa/mt7530.c
+@@ -3112,13 +3112,13 @@ static void mt753x_phylink_get_caps(stru
+ 
+ 	priv->info->mac_port_get_caps(ds, port, config);
+ 
+-	/* The EN7528 GPHYs report EEE capability, but negotiating EEE with
+-	 * common link partners (e.g. Realtek GbE NICs) results in an unstable
+-	 * link with dropped frames. Leave the LPI capabilities empty so that
++	/* The EN7528 and EN7581 GPHYs report EEE capability, but negotiating
++	 * EEE with common link partners (e.g. Realtek GbE NICs) results in an
++	 * unstable link with dropped frames. Leave LPI capabilities empty so
+ 	 * phylink disables EEE on these PHYs and refuses to enable it from
+ 	 * userspace.
+ 	 */
+-	if (priv->id != ID_EN7528 &&
++	if (priv->id != ID_EN7528 && priv->id != ID_EN7581 &&
+ 	    config->mac_capabilities & (MAC_100FD | MAC_1000FD)) {
+ 		u32 eeecr = mt7530_read(priv, MT753X_PMEEECR_P(port));
+ 
