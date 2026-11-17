@@ -68,13 +68,7 @@
 };
 
 &spi_nand {
-	/*
-	 * Bootloader stores pages without host ECC, so Linux uses
-	 * NAND_ECC_NONE for the same page layout.
-	 */
-	nand-ecc-mode = "none";
-	nand-ecc-step-size = <2048>;
-	nand-ecc-strength = <0>;
+	nand-ecc-engine = <&spi_nand>;
 
 	partitions: partitions {
 		compatible = "fixed-partitions";
