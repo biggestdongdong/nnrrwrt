@@ -224,6 +224,21 @@
 	};
 };
 
+&xpon_mac {
+	/*
+	 * SPI 34 reports a supply drop. The driver then drives the listed
+	 * lines low, which switches both USB VBUS outputs off and holds the
+	 * EN8811H in reset, and sends the dying-gasp message.
+	 */
+	interrupts = <GIC_SPI 42 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 43 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "mac", "phy", "dying-gasp";
+	airoha,dying-gasp-shed-gpios = <&en7581_pinctrl 23 GPIO_ACTIVE_LOW>,
+				       <&en7581_pinctrl 25 GPIO_ACTIVE_LOW>,
+				       <&en7581_pinctrl 31 GPIO_ACTIVE_LOW>;
+};
+
 &switch {
 	status = "okay";
 

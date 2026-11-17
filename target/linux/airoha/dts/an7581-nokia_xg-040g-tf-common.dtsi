@@ -28,6 +28,15 @@
 	/delete-property/ interrupts;
 };
 
+/* The supply-drop wiring is known for the MD board only. */
+&xpon_mac {
+	interrupts = <GIC_SPI 42 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 43 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "mac", "phy";
+
+	/delete-property/ airoha,dying-gasp-shed-gpios;
+};
+
 &usb0 {
 	status = "disabled";
 
