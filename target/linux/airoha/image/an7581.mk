@@ -348,7 +348,7 @@ define Device/nokia_xg-040g-md-common
   DEVICE_PACKAGES := kmod-gpio-button-hotplug kmod-leds-gpio \
     kmod-phy-airoha-en8811h \
     kmod-usb-ledtrig-usbport kmod-usb3 kmod-airoha-en7572 \
-    kmod-airoha-xpon airoha-ponctl airoha-pond \
+    kmod-airoha-xpon airoha-ponctl airoha-pond kmod-ramoops \
     $(AIROHA_USB_STORAGE_PACKAGES)
 endef
 

@@ -1,0 +1,98 @@
+#!/bin/sh /etc/rc.common
+#
+# Save the ramoops records of the previous boot to /etc/crashlog/<n>/ when
+# that boot ended with a panic, a dying gasp or a reset without a restart
+# message. The info file names the reason and the firmware that saved the
+# records. The newest CRASHLOG_KEEP directories are kept.
+#
+
+START=13
+
+PSTORE_DIR=/sys/fs/pstore
+CRASHLOG_DIR=/etc/crashlog
+CRASHLOG_KEEP=5
+
+crashlog_reason()
+{
+	local console="$PSTORE_DIR/console-ramoops-0"
+	local record
+
+	for record in "$PSTORE_DIR"/dmesg-ramoops-*; do
+		[ -e "$record" ] || continue
+		echo "panic"
+		return
+	done
+
+	[ -e "$console" ] || return
+
+	if grep -q 'dying gasp:' "$console"; then
+		echo "dying-gasp"
+	elif ! tail -n 20 "$console" |
+		grep -qE 'reboot: .*(Restarting system|Power down|System halted)'; then
+		echo "unclean-reset"
+	fi
+}
+
+crashlog_numbered()
+{
+	case "${1##*/}" in
+	''|*[!0-9]*|0*) return 1 ;;
+	esac
+
+	[ -d "$1" ]
+}
+
+crashlog_save()
+{
+	local reason="$1"
+	local last=0
+	local dir old record
+
+	for old in "$CRASHLOG_DIR"/*; do
+		crashlog_numbered "$old" || continue
+		[ "${old##*/}" -gt "$last" ] && last="${old##*/}"
+	done
+
+	dir="$CRASHLOG_DIR/$((last + 1))"
+	mkdir -p "$dir" || return 1
+
+	{
+		echo "reason: $reason"
+		[ -r /etc/openwrt_release ] && . /etc/openwrt_release
+		echo "firmware: $DISTRIB_DESCRIPTION $(uname -r)"
+	} > "$dir/info"
+
+	for record in "$PSTORE_DIR"/dmesg-ramoops-* "$PSTORE_DIR/console-ramoops-0"; do
+		[ -e "$record" ] || continue
+		cp "$record" "$dir/" && continue
+
+		rm -rf "$dir"
+		logger -t crashlog -p daemon.err "cannot save the $reason log to $dir"
+		return 1
+	done
+
+	# Unlinking a record frees its ramoops zone.
+	rm -f "$PSTORE_DIR"/dmesg-ramoops-*
+
+	for old in "$CRASHLOG_DIR"/*; do
+		crashlog_numbered "$old" || continue
+		[ "${old##*/}" -le "$((last + 1 - CRASHLOG_KEEP))" ] && rm -rf "$old"
+	done
+
+	logger -t crashlog -p daemon.warn "previous boot ended with $reason, log saved to $dir"
+}
+
+boot()
+{
+	local reason
+
+	# An initramfs boot has no flash-backed /etc: leave the records in RAM.
+	case "$(awk '$2 == "/" { type = $3 } END { print type }' /proc/mounts)" in
+	rootfs|tmpfs) return 0 ;;
+	esac
+
+	reason="$(crashlog_reason)"
+	[ -n "$reason" ] || return 0
+
+	crashlog_save "$reason"
+}

@@ -103,6 +103,18 @@
 		regulator-min-microvolt = <5000000>;
 		regulator-name = "usb2-vbus";
 	};
+
+	reserved-memory {
+		/* Kernel log of the previous boot; the content survives a warm reset. */
+		ramoops@86f00000 {
+			no-map;
+			compatible = "ramoops";
+			reg = <0x0 0x86f00000 0x0 0x100000>;
+			record-size = <0x20000>;
+			console-size = <0x40000>;
+			ecc-size = <16>;
+		};
+	};
 };
 
 &en7581_pinctrl {
