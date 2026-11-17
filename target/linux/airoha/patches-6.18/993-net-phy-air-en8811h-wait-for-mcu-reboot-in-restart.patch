@@ -1,0 +1,61 @@
+From: grislux55 <jebchou.hg@gmail.com>
+Subject: [PATCH] net: phy: air_en8811h: wait for MD32 reboot before polling ready
+
+Writing EN8811H_FW_CTRL_1_START (0x0f0018 = 0) does not clear
+EN8811H_PHY_FW_STATUS (0x1e:0x8009). When en8811h_restart_mcu() runs on
+re-open after GPIO reset deassertion (20 ms) or on an already running
+MCU, 0x1e:0x8009 can already hold EN8811H_PHY_READY (0x2), and
+phy_read_mmd_poll_timeout(..., 20000, 7500000, true) expands to
+usleep_range(5001, 20000). When hrtimer coalescing wakes that sleep near
+5 ms during boot, en8811h_wait_mcu_ready() returns on the stale ready
+value while the restarted MD32 is still initializing, and MD32's startup
+reset subsequently wipes the Mode 1 (2500Base-X rate adaptation) and
+EN8811H_GPIO_OUTPUT writes performed by en8811h_config_init().
+
+Hold EN8811H_FW_CTRL_1_START for 10 ms in en8811h_restart_mcu() and
+sleep 300 ms before polling 0x1e:0x8009 in en8811h_wait_mcu_ready(),
+matching the 300 ms pre-poll delay in Airoha's air_en8811h v1.2.4
+driver.
+
+Signed-off-by: grislux55 <jebchou.hg@gmail.com>
+---
+--- a/drivers/net/phy/air_en8811h.c
++++ b/drivers/net/phy/air_en8811h.c
+@@ -13,6 +13,7 @@
+ 
+ #include <linux/clk.h>
+ #include <linux/clk-provider.h>
++#include <linux/delay.h>
+ #include <linux/phy.h>
+ #include <linux/phy/phy-common-props.h>
+ #include <linux/firmware.h>
+@@ -448,11 +449,19 @@ static int en8811h_wait_mcu_ready(struct
+ {
+ 	int ret, reg_value;
+ 
++	/* EN8811H_PHY_FW_STATUS keeps EN8811H_PHY_READY across an MD32
++	 * restart until the rebooting firmware reinitializes its state.
++	 * Match the 300 ms pre-poll delay in stock air_en8811h v1.2.4 so
++	 * a coalesced poll sleep cannot read a stale ready value before
++	 * MD32 startup finishes resetting buckpbus registers.
++	 */
++	msleep(300);
++
+ 	/* Because of mdio-lock, may have to wait for multiple loads */
+ 	ret = phy_read_mmd_poll_timeout(phydev, MDIO_MMD_VEND1,
+ 					EN8811H_PHY_FW_STATUS, reg_value,
+ 					reg_value == EN8811H_PHY_READY,
+-					20000, 7500000, true);
++					20000, 7500000, false);
+ 	if (ret) {
+ 		phydev_err(phydev, "MCU not ready: 0x%x\n", reg_value);
+ 		return -ENODEV;
+@@ -533,6 +542,8 @@ static int en8811h_restart_mcu(struct ph
+ 	if (ret < 0)
+ 		return ret;
+ 
++	fsleep(10000);
++
+ 	ret = air_buckpbus_reg_write(phydev, EN8811H_FW_CTRL_1,
+ 				     EN8811H_FW_CTRL_1_FINISH);
+ 	if (ret < 0)
