@@ -1,0 +1,228 @@
+From: grislux55 <jebchou.hg@gmail.com>
+Subject: [PATCH] misc: add GPIO based USB VBUS over-current protection
+
+Some boards wire the fault flag of the USB port power switches to SoC
+GPIOs and leave it to the operating system to cut VBUS on over-current.
+The Nokia XG-040G-MD stock firmware carries usb_protect.ko for this:
+every 200 ms it samples the flag, drives the VBUS enable line low while
+the flag reports a fault and high again once the flag clears.
+
+Add a platform driver with the same policy on top of the regulator
+framework. The driver takes the VBUS regulator exclusively, so VBUS
+follows the flag alone and stays on without a host controller driver.
+
+A flag that remains asserted for five polls after VBUS went off is
+treated as stuck or unconnected: VBUS is switched back on and the port
+is left unmonitored. Without a usable flag GPIO the driver keeps VBUS on
+and does not poll.
+
+Signed-off-by: grislux55 <jebchou.hg@gmail.com>
+---
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -644,6 +644,20 @@ config MCHP_LAN966X_PCI
+ 	    - lan966x-miim (MDIO_MSCC_MIIM)
+ 	    - lan966x-switch (LAN966X_SWITCH)
+ 
++config USB_VBUS_OC_GPIO
++	tristate "USB VBUS over-current protection through a GPIO fault flag"
++	depends on GPIOLIB && REGULATOR
++	help
++	  Poll the fault flag of a USB port power switch and switch the VBUS
++	  regulator off while the flag reports over-current. VBUS is switched
++	  back on once the flag clears.
++
++	  The driver is the only consumer of the VBUS regulator, so VBUS stays
++	  on without a host controller driver.
++
++	  To compile this driver as a module, choose M here: the module will
++	  be called usb-vbus-oc-gpio.
++
+ source "drivers/misc/c2port/Kconfig"
+ source "drivers/misc/eeprom/Kconfig"
+ source "drivers/misc/cb710/Kconfig"
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -75,3 +75,4 @@ obj-$(CONFIG_MCHP_LAN966X_PCI)	+= lan966
+ obj-y				+= keba/
+ obj-y				+= amd-sbi/
+ obj-$(CONFIG_MISC_RP1)		+= rp1/
++obj-$(CONFIG_USB_VBUS_OC_GPIO)	+= usb-vbus-oc-gpio.o
+--- /dev/null
++++ b/drivers/misc/usb-vbus-oc-gpio.c
+@@ -0,0 +1,175 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * USB VBUS over-current protection through a GPIO fault flag
++ *
++ * The flag of the port power switch is sampled every 200 ms. VBUS is switched
++ * off while the flag is asserted and back on once it clears.
++ */
++
++#include <linux/device.h>
++#include <linux/err.h>
++#include <linux/gpio/consumer.h>
++#include <linux/jiffies.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/regulator/consumer.h>
++#include <linux/workqueue.h>
++
++#define USB_VBUS_OC_POLL_MS		200
++/* Polls with VBUS off after which an asserted flag counts as stuck */
++#define USB_VBUS_OC_STUCK_POLLS		5
++/* Polls with VBUS on and a clear flag after which an event is closed */
++#define USB_VBUS_OC_CLEAR_POLLS		25
++
++struct usb_vbus_oc {
++	struct device *dev;
++	struct gpio_desc *flag;
++	struct regulator *vbus;
++	struct delayed_work work;
++	unsigned int trips;
++	unsigned int stuck_polls;
++	unsigned int clear_polls;
++	bool vbus_on;
++};
++
++static int usb_vbus_oc_switch(struct usb_vbus_oc *oc, bool on)
++{
++	int ret;
++
++	if (oc->vbus_on == on)
++		return 0;
++
++	ret = on ? regulator_enable(oc->vbus) : regulator_disable(oc->vbus);
++	if (ret) {
++		dev_err_ratelimited(oc->dev, "cannot switch VBUS %s (%d)\n",
++				    on ? "on" : "off", ret);
++		return ret;
++	}
++
++	oc->vbus_on = on;
++
++	return 0;
++}
++
++static void usb_vbus_oc_poll(struct work_struct *work)
++{
++	struct usb_vbus_oc *oc =
++		container_of(to_delayed_work(work), struct usb_vbus_oc, work);
++	int flag = gpiod_get_value_cansleep(oc->flag);
++
++	if (flag < 0) {
++		dev_warn(oc->dev,
++			 "cannot read the over-current flag (%d), VBUS stays on unmonitored\n",
++			 flag);
++		usb_vbus_oc_switch(oc, true);
++		return;
++	}
++
++	if (!oc->vbus_on) {
++		if (!flag) {
++			usb_vbus_oc_switch(oc, true);
++		} else if (++oc->stuck_polls >= USB_VBUS_OC_STUCK_POLLS) {
++			/* A stuck or unconnected flag must not keep the port off. */
++			dev_warn(oc->dev,
++				 "the over-current flag stays asserted with VBUS off, VBUS stays on unmonitored\n");
++			usb_vbus_oc_switch(oc, true);
++			return;
++		}
++	} else if (flag) {
++		oc->clear_polls = 0;
++		if (!usb_vbus_oc_switch(oc, false)) {
++			oc->stuck_polls = 0;
++			if (!oc->trips++)
++				dev_warn(oc->dev,
++					 "over-current, VBUS is off until the flag clears\n");
++		}
++	} else if (oc->trips && ++oc->clear_polls >= USB_VBUS_OC_CLEAR_POLLS) {
++		dev_info(oc->dev, "over-current ended after %u VBUS cut(s)\n",
++			 oc->trips);
++		oc->trips = 0;
++	}
++
++	schedule_delayed_work(&oc->work, msecs_to_jiffies(USB_VBUS_OC_POLL_MS));
++}
++
++static void usb_vbus_oc_stop(void *data)
++{
++	struct usb_vbus_oc *oc = data;
++
++	cancel_delayed_work_sync(&oc->work);
++	/* An exclusive regulator handle is released disabled. */
++	usb_vbus_oc_switch(oc, false);
++}
++
++static int usb_vbus_oc_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct usb_vbus_oc *oc;
++	int ret;
++
++	oc = devm_kzalloc(dev, sizeof(*oc), GFP_KERNEL);
++	if (!oc)
++		return -ENOMEM;
++
++	oc->dev = dev;
++	INIT_DELAYED_WORK(&oc->work, usb_vbus_oc_poll);
++
++	/* Requested first: a deferral leaves VBUS as the bootloader set it. */
++	oc->flag = devm_gpiod_get(dev, "overcurrent", GPIOD_IN);
++	if (IS_ERR(oc->flag) && PTR_ERR(oc->flag) == -EPROBE_DEFER)
++		return -EPROBE_DEFER;
++
++	/*
++	 * Exclusive, so that no other consumer holds VBUS on while the flag
++	 * is asserted. The handle inherits the enable state left by the
++	 * bootloader.
++	 */
++	oc->vbus = devm_regulator_get_exclusive(dev, "vbus");
++	if (IS_ERR(oc->vbus))
++		return dev_err_probe(dev, PTR_ERR(oc->vbus),
++				     "cannot get the VBUS supply\n");
++
++	ret = regulator_is_enabled(oc->vbus);
++	if (ret < 0)
++		return dev_err_probe(dev, ret, "cannot read the VBUS state\n");
++	oc->vbus_on = ret;
++
++	ret = devm_add_action_or_reset(dev, usb_vbus_oc_stop, oc);
++	if (ret)
++		return ret;
++
++	ret = usb_vbus_oc_switch(oc, true);
++	if (ret)
++		return ret;
++
++	if (IS_ERR(oc->flag)) {
++		/* The port keeps working, protected by the power switch alone. */
++		dev_warn(dev,
++			 "no over-current flag (%pe), VBUS stays on unmonitored\n",
++			 oc->flag);
++		return 0;
++	}
++
++	schedule_delayed_work(&oc->work, msecs_to_jiffies(USB_VBUS_OC_POLL_MS));
++
++	return 0;
++}
++
++static const struct of_device_id usb_vbus_oc_of_match[] = {
++	{ .compatible = "usb-vbus-oc-gpio" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, usb_vbus_oc_of_match);
++
++static struct platform_driver usb_vbus_oc_driver = {
++	.probe = usb_vbus_oc_probe,
++	.driver = {
++		.name = "usb-vbus-oc-gpio",
++		.of_match_table = usb_vbus_oc_of_match,
++	},
++};
++module_platform_driver(usb_vbus_oc_driver);
++
++MODULE_DESCRIPTION("USB VBUS over-current protection through a GPIO fault flag");
++MODULE_LICENSE("GPL");

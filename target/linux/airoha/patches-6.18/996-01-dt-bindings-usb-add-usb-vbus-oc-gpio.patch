@@ -1,0 +1,56 @@
+From: grislux55 <jebchou.hg@gmail.com>
+Subject: [PATCH] dt-bindings: usb: add GPIO based VBUS over-current protection
+
+Describe a USB port power switch whose fault flag is wired to a GPIO and
+whose VBUS regulator the operating system switches off while the flag
+reports over-current.
+
+Signed-off-by: grislux55 <jebchou.hg@gmail.com>
+---
+--- /dev/null
++++ b/Documentation/devicetree/bindings/usb/usb-vbus-oc-gpio.yaml
+@@ -0,0 +1,44 @@
++# SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
++%YAML 1.2
++---
++$id: http://devicetree.org/schemas/usb/usb-vbus-oc-gpio.yaml#
++$schema: http://devicetree.org/meta-schemas/core.yaml#
++
++title: USB VBUS over-current protection through a GPIO fault flag
++
++maintainers:
++  - grislux55 <jebchou.hg@gmail.com>
++
++description:
++  A USB port power switch that reports over-current on a fault flag line. The
++  operating system switches VBUS off while the flag is asserted and back on
++  once it clears. The node is the only consumer of the VBUS regulator, so the
++  host controller node carries no vbus-supply.
++
++properties:
++  compatible:
++    const: usb-vbus-oc-gpio
++
++  overcurrent-gpios:
++    maxItems: 1
++    description: Fault flag of the power switch, asserted on over-current.
++
++  vbus-supply:
++    description: Regulator that switches VBUS of the port.
++
++required:
++  - compatible
++  - overcurrent-gpios
++  - vbus-supply
++
++additionalProperties: false
++
++examples:
++  - |
++    #include <dt-bindings/gpio/gpio.h>
++
++    usb-vbus-oc {
++        compatible = "usb-vbus-oc-gpio";
++        overcurrent-gpios = <&gpio 21 GPIO_ACTIVE_LOW>;
++        vbus-supply = <&reg_usb_vbus>;
++    };

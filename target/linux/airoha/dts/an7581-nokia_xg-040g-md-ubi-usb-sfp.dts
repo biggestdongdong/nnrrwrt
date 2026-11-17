@@ -8,6 +8,9 @@
 	compatible = "nokia,xg-040g-md-ubi", "airoha,an7581",
 		     "airoha,en7581";
 	variant = "usb-sfp";
+
+	/* VBUS of port 1 powers the SFP cage on lan5 and stays on. */
+	/delete-node/ usb1-vbus-oc;
 };
 
 &usb_pcs {

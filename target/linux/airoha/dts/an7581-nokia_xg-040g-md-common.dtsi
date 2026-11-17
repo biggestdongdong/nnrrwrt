@@ -115,6 +115,23 @@
 			ecc-size = <16>;
 		};
 	};
+
+	/*
+	 * The port power switches report over-current on GPIO21 and GPIO22.
+	 * These nodes own the VBUS regulators, the xHCI nodes carry no
+	 * vbus-supply.
+	 */
+	usb1-vbus-oc {
+		compatible = "usb-vbus-oc-gpio";
+		overcurrent-gpios = <&en7581_pinctrl 21 GPIO_ACTIVE_LOW>;
+		vbus-supply = <&reg_usb1_vbus>;
+	};
+
+	usb2-vbus-oc {
+		compatible = "usb-vbus-oc-gpio";
+		overcurrent-gpios = <&en7581_pinctrl 22 GPIO_ACTIVE_LOW>;
+		vbus-supply = <&reg_usb2_vbus>;
+	};
 };
 
 &en7581_pinctrl {
@@ -305,7 +322,6 @@
 &usb0 {
 	status = "okay";
 
-	vbus-supply = <&reg_usb1_vbus>;
 	vusb33-supply = <&reg_3p3v>;
 
 	#address-cells = <1>;
@@ -322,7 +338,6 @@
 
 	mediatek,u3p-dis-msk = <0x1>;
 	phys = <&usb1_phy PHY_TYPE_USB2>;
-	vbus-supply = <&reg_usb2_vbus>;
 	vusb33-supply = <&reg_3p3v>;
 
 	#address-cells = <1>;
