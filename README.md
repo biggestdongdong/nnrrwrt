@@ -2,7 +2,7 @@
 
 English | [简体中文](README_zh.md)
 
-**NNRRWrt** is a Linux 6.18 optical gateway, main-router, and relay firmware targeting **Nokia XG-040G-MD** (Airoha AN7581, UBI & USB-SFP variants) and compatible Airoha AN7581 / AN7583 PON devices, built on [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) and [PonWrt](https://github.com/pbs05/ponwrt).
+**NNRRWrt** is a Linux 6.18 optical gateway, main-router, and relay firmware targeting **Nokia XG-040G-MD** (Airoha AN7581 UBI) and compatible Airoha AN7581 / AN7583 PON devices, built on [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) and [PonWrt](https://github.com/pbs05/ponwrt).
 
 ## ⚠️ Flashing risks
 
@@ -31,7 +31,7 @@ Use authorized network access and device identities. Follow local laws, regulati
 
 | SoC | Device | Profile | Stock calibration / identity data |
 | --- | --- | --- | --- |
-| AN7581 | **Nokia XG-040G-MD UBI** *(Primary Target)* | `nokia_xg-040g-md-ubi`, `nokia_xg-040g-md-ubi-usb-sfp` | `bosa`, `ri` |
+| AN7581 | **Nokia XG-040G-MD UBI** *(Primary Target)* | `nokia_xg-040g-md-ubi`, `nokia_xg-040g-md-ubi-usb-sfp` *(not built by default)* | `bosa`, `ri` |
 | AN7581 | Nokia XG-040G-TF UBI | `nokia_xg-040g-tf-ubi` | `bosa`, `ri` |
 | AN7581 | FiberHome HG5382A | `fiberhome_hg5382a` | `factory` |
 | AN7581 | FiberHome HG5585F CT | `fiberhome_hg5585f-ct` | `factory` |
@@ -70,7 +70,8 @@ cd nnrrwrt
 ./scripts/feeds install -a
 
 # 4. Select configuration
-# Option A (Recommended): Nokia XG-040G-MD (UBI & USB-SFP) configuration
+# Option A (Recommended): Nokia XG-040G-MD UBI configuration
+# The USB-SFP variant is off; append CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y to .config after the copy to build it as well
 cp configs/nnrrwrt-xg040g-md.config .config
 
 # Option B: Generic multi-device AN7581 / AN7583 release configuration

@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-**NNRRWrt** 是面向 **Nokia XG-040G-MD**（Airoha AN7581，含标准 UBI 与 USB-SFP 变体）的 Linux 6.18 光猫主路由与中继固件，同时兼容其他 Airoha AN7581 / AN7583 机型，基于 [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) 与 [PonWrt](https://github.com/pbs05/ponwrt) 构建。
+**NNRRWrt** 是面向 **Nokia XG-040G-MD**（Airoha AN7581 UBI）的 Linux 6.18 光猫主路由与中继固件，同时兼容其他 Airoha AN7581 / AN7583 机型，基于 [ImmortalWrt](https://github.com/immortalwrt/immortalwrt) 与 [PonWrt](https://github.com/pbs05/ponwrt) 构建。
 
 ## ⚠️ 刷机风险
 
@@ -31,7 +31,7 @@
 
 | SoC | 设备 | Profile | 原厂校准/身份数据分区 |
 | --- | --- | --- | --- |
-| AN7581 | **Nokia XG-040G-MD UBI**（主目标机型） | `nokia_xg-040g-md-ubi`、`nokia_xg-040g-md-ubi-usb-sfp` | `bosa`、`ri` |
+| AN7581 | **Nokia XG-040G-MD UBI**（主目标机型） | `nokia_xg-040g-md-ubi`、`nokia_xg-040g-md-ubi-usb-sfp`（默认不构建） | `bosa`、`ri` |
 | AN7581 | Nokia XG-040G-TF UBI | `nokia_xg-040g-tf-ubi` | `bosa`、`ri` |
 | AN7581 | FiberHome HG5382A | `fiberhome_hg5382a` | `factory` |
 | AN7581 | FiberHome HG5585F CT | `fiberhome_hg5585f-ct` | `factory` |
@@ -70,7 +70,8 @@ cd nnrrwrt
 ./scripts/feeds install -a
 
 # 4. 选择构建配置
-# 方式 A（推荐）：Nokia XG-040G-MD（标准 UBI + USB-SFP 变体）配置
+# 方式 A（推荐）：Nokia XG-040G-MD（标准 UBI）配置
+# USB-SFP 变体默认不构建；复制后在 .config 末尾追加 CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y 即可一并构建
 cp configs/nnrrwrt-xg040g-md.config .config
 
 # 方式 B：通用 AN7581 / AN7583 全机型发布配置

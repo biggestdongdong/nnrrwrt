@@ -62,10 +62,10 @@ echo "[3/5] Checking feeds.conf.default and target configs..."
 grep -qE '^src-git[[:space:]]+nnrrwrt_drivers[[:space:]]+https://github\.com/grislux55/nnrrwrt-drivers\.git$' feeds.conf.default || fail "feeds.conf.default missing https://github.com/grislux55/nnrrwrt-drivers.git"
 grep -qE '^src-git[[:space:]]+nnrrwrt_packages[[:space:]]+https://github\.com/grislux55/nnrrwrt-packages\.git$' feeds.conf.default || fail "feeds.conf.default missing https://github.com/grislux55/nnrrwrt-packages.git"
 grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y$' configs/an7581.config || fail "an7581.config missing nokia_xg-040g-md-ubi"
-grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' configs/an7581.config || fail "an7581.config missing nokia_xg-040g-md-ubi-usb-sfp"
+grep -q '^# CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp is not set$' configs/an7581.config || fail "an7581.config must leave nokia_xg-040g-md-ubi-usb-sfp unset"
 [ -f configs/nnrrwrt-xg040g-md.config ] || fail "Missing configs/nnrrwrt-xg040g-md.config"
 grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y$' configs/nnrrwrt-xg040g-md.config || fail "nnrrwrt-xg040g-md.config missing nokia_xg-040g-md-ubi"
-grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' configs/nnrrwrt-xg040g-md.config || fail "nnrrwrt-xg040g-md.config missing nokia_xg-040g-md-ubi-usb-sfp"
+! grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' configs/nnrrwrt-xg040g-md.config || fail "nnrrwrt-xg040g-md.config enables nokia_xg-040g-md-ubi-usb-sfp"
 grep -q '^CONFIG_VERSION_DIST="NNRRWrt"$' configs/nnrrwrt-xg040g-md.config || fail "nnrrwrt-xg040g-md.config missing VERSION_DIST=NNRRWrt"
 grep -q '^CONFIG_VERSION_HOME_URL="https://github.com/grislux55/nnrrwrt"$' configs/nnrrwrt-xg040g-md.config || fail "nnrrwrt-xg040g-md.config missing VERSION_HOME_URL"
 grep -q '^CONFIG_PACKAGE_drill=y$' configs/nnrrwrt-xg040g-md.config || fail "nnrrwrt-xg040g-md.config missing drill"
@@ -108,13 +108,13 @@ if [ "$WITH_DEFCONFIG" -eq 1 ]; then
 	./scripts/kconfig.pl + configs/an7581.config configs/release.config > .config
 	make defconfig
 	grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y$' .config || fail "make defconfig dropped nokia_xg-040g-md-ubi"
-	grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' .config || fail "make defconfig dropped nokia_xg-040g-md-ubi-usb-sfp"
+	! grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' .config || fail "make defconfig enabled nokia_xg-040g-md-ubi-usb-sfp"
 	echo "[OK] make defconfig preserved baseline an7581 XG-040G-MD profiles"
 
 	cp configs/nnrrwrt-xg040g-md.config .config
 	make defconfig
 	grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y$' .config || fail "nnrrwrt-xg040g-md defconfig dropped nokia_xg-040g-md-ubi"
-	grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' .config || fail "nnrrwrt-xg040g-md defconfig dropped nokia_xg-040g-md-ubi-usb-sfp"
+	! grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' .config || fail "nnrrwrt-xg040g-md defconfig enabled nokia_xg-040g-md-ubi-usb-sfp"
 	grep -q '^CONFIG_VERSION_DIST="NNRRWrt"$' .config || fail "nnrrwrt-xg040g-md defconfig dropped VERSION_DIST"
 	grep -q '^CONFIG_PACKAGE_airoha-ponctl=y$' .config || fail "nnrrwrt-xg040g-md defconfig missing airoha-ponctl"
 	grep -q '^CONFIG_PACKAGE_airoha-pond=y$' .config || fail "nnrrwrt-xg040g-md defconfig missing airoha-pond"

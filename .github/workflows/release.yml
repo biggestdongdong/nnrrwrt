@@ -267,7 +267,10 @@ jobs:
           fi
           if [ "$TARGET_NAME" = "an7581" ] || [ "$TARGET_NAME" = "nnrrwrt-xg040g-md" ]; then
             grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi=y$' .config
-            grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' .config
+            if grep -q '^CONFIG_TARGET_DEVICE_airoha_an7581_DEVICE_nokia_xg-040g-md-ubi-usb-sfp=y$' .config; then
+              echo "nokia_xg-040g-md-ubi-usb-sfp must stay disabled" >&2
+              exit 1
+            fi
           fi
           grep -E '^CONFIG_(TARGET_airoha|TARGET_MULTI_PROFILE|DEVEL|CCACHE|AUTOREMOVE|USE_APK|SIGNED_PACKAGES|SIGN_EACH_PACKAGE|USE_LLVM|BPF_TOOLCHAIN|TOOLCHAIN|GCC|BINUTILS|GDB|MUSL|GLIBC|USE_MUSL|USE_GLIBC|USE_RUST|RUST_|PKG_CC_STACKPROTECTOR|SSP_SUPPORT|FORTIFY|RELRO|ASLR|PIE)' .config \
             | LC_ALL=C sort > tmp/toolchain-cache-key.txt
@@ -410,8 +413,6 @@ jobs:
           ls -lh bin/targets/airoha/an7581/*nokia_xg-040g-md-ubi*itb
           test -s bin/targets/airoha/an7581/*nokia_xg-040g-md-ubi-initramfs-recovery.itb
           test -s bin/targets/airoha/an7581/*nokia_xg-040g-md-ubi-squashfs-sysupgrade.itb
-          test -s bin/targets/airoha/an7581/*nokia_xg-040g-md-ubi-usb-sfp-initramfs-recovery.itb
-          test -s bin/targets/airoha/an7581/*nokia_xg-040g-md-ubi-usb-sfp-squashfs-sysupgrade.itb
 
       - name: Pack ${{ matrix.target }}
         env:
@@ -432,7 +433,7 @@ jobs:
           if [ "$TARGET_NAME" = "nnrrwrt-xg040g-md" ]; then
             cp bin/targets/airoha/an7581/*nokia_xg-040g-md-ubi*itb release/
             if [ -n "$RELEASE_VERSION" ]; then
-              for image in ubi-initramfs-recovery ubi-squashfs-sysupgrade ubi-usb-sfp-initramfs-recovery ubi-usb-sfp-squashfs-sysupgrade; do
+              for image in ubi-initramfs-recovery ubi-squashfs-sysupgrade; do
                 test -s "release/nnrrwrt-${RELEASE_VERSION}-airoha-an7581-nokia_xg-040g-md-${image}.itb"
               done
             fi
