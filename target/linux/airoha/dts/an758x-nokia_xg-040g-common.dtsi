@@ -47,8 +47,9 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&pon_pins>;
 	optical-front-end = <&en7572>;
-	nvmem-cells = <&pon_serial>;
-	nvmem-cell-names = "pon-serial";
+	/* Stock hcfg.conf assigns Llid.Mac.Offset=9 to the EPON LLID address. */
+	nvmem-cells = <&pon_serial>, <&macaddr_factory_3e 9>;
+	nvmem-cell-names = "pon-serial", "epon-mac-address";
 	/* data-path references the GDM carrying service GEM traffic. */
 	data-path = <&gdm2>;
 	status = "okay";
