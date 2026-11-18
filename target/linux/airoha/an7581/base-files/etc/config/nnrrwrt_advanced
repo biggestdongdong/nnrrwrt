@@ -1,0 +1,4 @@
+config nnrrwrt_advanced 'main'
+	option throttle_temp '95'
+	option dying_gasp '1'
+	option crashlog_keep '5'

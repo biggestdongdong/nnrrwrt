@@ -3,7 +3,8 @@
 # Save the ramoops records of the previous boot to /etc/crashlog/<n>/ when
 # that boot ended with a panic, a dying gasp or a reset without a restart
 # message. The info file names the reason and the firmware that saved the
-# records. The newest CRASHLOG_KEEP directories are kept.
+# records. The newest CRASHLOG_KEEP directories are kept. The count comes from
+# nnrrwrt_advanced.main.crashlog_keep, 0 saves nothing.
 #
 
 START=13
@@ -84,12 +85,21 @@ crashlog_save()
 
 boot()
 {
-	local reason
+	local reason keep
 
 	# An initramfs boot has no flash-backed /etc: leave the records in RAM.
 	case "$(awk '$2 == "/" { type = $3 } END { print type }' /proc/mounts)" in
 	rootfs|tmpfs) return 0 ;;
 	esac
+
+	config_load nnrrwrt_advanced
+	config_get keep main crashlog_keep "$CRASHLOG_KEEP"
+	case "$keep" in
+	''|*[!0-9]*) keep="$CRASHLOG_KEEP" ;;
+	esac
+	[ "$keep" -le 10 ] || keep=10
+	[ "$keep" -gt 0 ] || return 0
+	CRASHLOG_KEEP="$keep"
 
 	reason="$(crashlog_reason)"
 	[ -n "$reason" ] || return 0
