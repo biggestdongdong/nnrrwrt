@@ -1,0 +1,46 @@
+From: grislux55 <jebchou.hg@gmail.com>
+Subject: [PATCH] net: airoha: program egress MTU on all PPE instances
+
+On dual-PPE AN7581 SoCs, PPE0 processes LAN-to-WAN and LAN-to-LAN flows
+while PPE1 processes WAN-to-LAN flows. Every PPE checks the egress MTU
+register of the destination GDM port before hardware forwarding.
+
+airoha_ppe_set_xmit_frame_size() only updated a single PPE selected from
+the port's own LAN/WAN role, leaving PPE1 index 7 (GDM4 / 2.5G LAN) at
+its hardware reset value of 0 bytes and PPE0 index 2 (GDM2 / PON) at its
+reset value. As a result, PPE1 punted all WAN-to-GDM4 hardware-offloaded
+packets back to CPU.
+
+Program REG_PPE_MTU(i, index) across all PPE instances supported by the
+SoC (matching factory hw_nat.ko PpeSetFpMtu on AN7581), while preserving
+single-PPE behavior on SoCs with num_ppe == 1.
+
+Signed-off-by: grislux55 <jebchou.hg@gmail.com>
+---
+--- a/drivers/net/ethernet/airoha/airoha_ppe.c
++++ b/drivers/net/ethernet/airoha/airoha_ppe.c
+@@ -145,7 +145,7 @@ void airoha_ppe_set_xmit_frame_size(stru
+ 	struct airoha_gdm_port *port = dev->port;
+ 	struct airoha_eth *eth = dev->eth;
+ 	struct airoha_qdma *qdma;
+-	int i, ppe_id, index;
++	int i, index;
+ 	u32 len = 0;
+ 
+ 	qdma = airoha_qdma_deref(dev);
+@@ -167,11 +167,11 @@ void airoha_ppe_set_xmit_frame_size(stru
+ 	}
+ 	len += VLAN_ETH_HLEN;
+ 
+-	ppe_id = !airoha_is_lan_gdm_dev(dev) && airoha_ppe_is_enabled(eth, 1);
+ 	index = port->id == AIROHA_GDM4_IDX ? 7 : port->id;
+-	airoha_fe_rmw(eth, REG_PPE_MTU(ppe_id, index),
+-		      FP_EGRESS_MTU_MASK(index),
+-		      __field_prep(FP_EGRESS_MTU_MASK(index), len));
++	for (i = 0; i < eth->soc->num_ppe; i++)
++		airoha_fe_rmw(eth, REG_PPE_MTU(i, index),
++			      FP_EGRESS_MTU_MASK(index),
++			      __field_prep(FP_EGRESS_MTU_MASK(index), len));
+ }
+ 
+ static void airoha_ppe_program_aging(struct airoha_eth *eth, int index,

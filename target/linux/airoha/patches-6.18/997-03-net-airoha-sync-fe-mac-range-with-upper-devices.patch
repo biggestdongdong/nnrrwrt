@@ -1,0 +1,266 @@
+From: grislux55 <jebchou.hg@gmail.com>
+Subject: [PATCH] net: airoha: sync FE MAC filter range with active upper devices
+
+AN7581 FE uses REG_FE_WAN_MAC_H/LMIN/LMAX and REG_FE_LAN_MAC_H/LMIN/LMAX
+to identify router-destined frames ("My MAC") for L3 PPE flow parsing.
+When a WAN VLAN subinterface (such as pon0.2001) or LAN bridge uses a
+cloned MAC address that differs from the underlying physical GDM port,
+incoming packets addressed to that cloned MAC do not match FE_WAN_MAC or
+FE_LAN_MAC and are classified as L2B instead of IPv4/IPv6 5-tuple flows,
+preventing downlink L3 hardware offload.
+
+Register a netdevice notifier to synchronize the FE WAN/LAN MAC filter
+registers whenever an upper VLAN, bridge, or macvlan Ethernet device
+changes state, address, or upper linkage. Only active Ethernet upper
+netdevices are inspected so client bridge FDB unicast entries never
+affect the hardware MAC range.
+
+Signed-off-by: grislux55 <jebchou.hg@gmail.com>
+---
+--- a/drivers/net/ethernet/airoha/airoha_eth.h
++++ b/drivers/net/ethernet/airoha/airoha_eth.h
+@@ -793,6 +793,7 @@ struct airoha_eth {
+ 	struct reset_control_bulk_data *xsi_rsts;
+ 
+ 	struct net_device *napi_dev;
++	struct notifier_block nb;
+ 
+ 	struct airoha_qdma qdma[AIROHA_MAX_NUM_QDMA];
+ 	struct airoha_gdm_port *ports[AIROHA_MAX_NUM_GDM_PORTS];
+--- a/drivers/net/ethernet/airoha/airoha_eth.c
++++ b/drivers/net/ethernet/airoha/airoha_eth.c
+@@ -4,6 +4,7 @@
+  * Author: Lorenzo Bianconi <lorenzo@kernel.org>
+  */
+ #include <linux/airoha-eth.h>
++#include <linux/if_vlan.h>
+ #include <linux/of.h>
+ #include <linux/of_net.h>
+ #include <linux/of_reserved_mem.h>
+@@ -178,6 +179,205 @@ static int airoha_set_macaddr(struct air
+ 	return 0;
+ }
+ 
++struct airoha_fe_mac_walk_ctx {
++	const u8 *phys_addr;
++	u8 ref_addr[ETH_ALEN] __aligned(2);
++	u32 lmin;
++	u32 lmax;
++	bool found;
++	bool conflict;
++};
++
++static bool airoha_is_mac_sync_upper(struct net_device *dev)
++{
++	if (dev->type != ARPHRD_ETHER || !netif_running(dev))
++		return false;
++	if (!is_valid_ether_addr(dev->dev_addr))
++		return false;
++
++	return is_vlan_dev(dev) || netif_is_bridge_master(dev) ||
++	       netif_is_macvlan(dev);
++}
++
++static int airoha_fe_collect_upper_mac(struct net_device *upper,
++				       struct netdev_nested_priv *priv)
++{
++	struct airoha_fe_mac_walk_ctx *ctx = priv->data;
++	u32 low;
++
++	if (!airoha_is_mac_sync_upper(upper))
++		return 0;
++
++	if (ether_addr_equal(upper->dev_addr, ctx->phys_addr))
++		return 0;
++
++	low = (upper->dev_addr[3] << 16) | (upper->dev_addr[4] << 8) |
++	      upper->dev_addr[5];
++
++	if (!ctx->found) {
++		ether_addr_copy(ctx->ref_addr, upper->dev_addr);
++		ctx->lmin = low;
++		ctx->lmax = low;
++		ctx->found = true;
++		return 0;
++	}
++
++	if (memcmp(ctx->ref_addr, upper->dev_addr, 3)) {
++		ctx->conflict = true;
++		return 0;
++	}
++
++	if (low < ctx->lmin)
++		ctx->lmin = low;
++	if (low > ctx->lmax)
++		ctx->lmax = low;
++
++	return 0;
++}
++
++static void airoha_fe_sync_mac_range(struct airoha_eth *eth, bool is_lan)
++{
++	struct airoha_fe_mac_walk_ctx upper_ctx = {};
++	u8 phys_ref[ETH_ALEN] __aligned(2);
++	u32 phys_lmin = 0, phys_lmax = 0;
++	bool phys_found = false;
++	const u8 *use_oui;
++	u32 reg, lmin, lmax;
++	int i;
++
++	eth_zero_addr(phys_ref);
++
++	rcu_read_lock();
++	for (i = 0; i < ARRAY_SIZE(eth->ports); i++) {
++		struct airoha_gdm_port *port = eth->ports[i];
++		int j;
++
++		if (!port)
++			continue;
++
++		for (j = 0; j < ARRAY_SIZE(port->devs); j++) {
++			struct airoha_gdm_dev *iter_dev = port->devs[j];
++			struct netdev_nested_priv priv = {
++				.data = &upper_ctx,
++			};
++			struct net_device *netdev;
++			u32 low;
++
++			if (!iter_dev ||
++			    airoha_is_lan_gdm_dev(iter_dev) != is_lan)
++				continue;
++
++			netdev = netdev_from_priv(iter_dev);
++			if (netdev->reg_state != NETREG_REGISTERED)
++				continue;
++
++			if (is_valid_ether_addr(netdev->dev_addr)) {
++				low = (netdev->dev_addr[3] << 16) |
++				      (netdev->dev_addr[4] << 8) |
++				      netdev->dev_addr[5];
++				if (!phys_found) {
++					ether_addr_copy(phys_ref,
++							netdev->dev_addr);
++					phys_lmin = low;
++					phys_lmax = low;
++					phys_found = true;
++				} else if (!memcmp(phys_ref, netdev->dev_addr,
++						   3)) {
++					if (low < phys_lmin)
++						phys_lmin = low;
++					if (low > phys_lmax)
++						phys_lmax = low;
++				}
++			}
++
++			upper_ctx.phys_addr = netdev->dev_addr;
++			netdev_walk_all_upper_dev_rcu(netdev,
++						      airoha_fe_collect_upper_mac,
++						      &priv);
++		}
++	}
++	rcu_read_unlock();
++
++	if (upper_ctx.found) {
++		use_oui = upper_ctx.ref_addr;
++		lmin = upper_ctx.lmin;
++		lmax = upper_ctx.lmax;
++		if (phys_found && !memcmp(phys_ref, use_oui, 3)) {
++			if (phys_lmin < lmin)
++				lmin = phys_lmin;
++			if (phys_lmax > lmax)
++				lmax = phys_lmax;
++		}
++		if (upper_ctx.conflict)
++			dev_warn_once(eth->dev,
++				      "%s upper netdevs have differing MAC OUIs; FE hw forwarding uses %02x:%02x:%02x\n",
++				      is_lan ? "LAN" : "WAN",
++				      use_oui[0], use_oui[1], use_oui[2]);
++	} else if (phys_found) {
++		use_oui = phys_ref;
++		lmin = phys_lmin;
++		lmax = phys_lmax;
++	} else {
++		return;
++	}
++
++	reg = is_lan ? REG_FE_LAN_MAC_H : REG_FE_WAN_MAC_H;
++	airoha_fe_wr(eth, reg,
++		     (use_oui[0] << 16) | (use_oui[1] << 8) | use_oui[2]);
++	airoha_fe_wr(eth, REG_FE_MAC_LMIN(reg), lmin);
++	airoha_fe_wr(eth, REG_FE_MAC_LMAX(reg), lmax);
++}
++
++static int airoha_netdev_event(struct notifier_block *nb,
++			       unsigned long event, void *ptr)
++{
++	struct net_device *event_dev = netdev_notifier_info_to_dev(ptr);
++	struct airoha_eth *eth = container_of(nb, struct airoha_eth, nb);
++	bool sync_lan = false, sync_wan = false;
++	int i;
++
++	if (event != NETDEV_UP && event != NETDEV_DOWN &&
++	    event != NETDEV_CHANGEADDR && event != NETDEV_CHANGEUPPER)
++		return NOTIFY_DONE;
++
++	rcu_read_lock();
++	for (i = 0; i < ARRAY_SIZE(eth->ports); i++) {
++		struct airoha_gdm_port *port = eth->ports[i];
++		int j;
++
++		if (!port)
++			continue;
++
++		for (j = 0; j < ARRAY_SIZE(port->devs); j++) {
++			struct airoha_gdm_dev *dev = port->devs[j];
++			struct net_device *netdev;
++
++			if (!dev)
++				continue;
++
++			netdev = netdev_from_priv(dev);
++			if (netdev->reg_state != NETREG_REGISTERED)
++				continue;
++
++			if (event_dev == netdev ||
++			    netdev_has_upper_dev_all_rcu(netdev, event_dev)) {
++				if (airoha_is_lan_gdm_dev(dev))
++					sync_lan = true;
++				else
++					sync_wan = true;
++			}
++		}
++	}
++	rcu_read_unlock();
++
++	if (sync_lan)
++		airoha_fe_sync_mac_range(eth, true);
++	if (sync_wan)
++		airoha_fe_sync_mac_range(eth, false);
++
++	return NOTIFY_DONE;
++}
++
+ static void airoha_set_gdm_port_fwd_cfg(struct airoha_eth *eth, u32 addr,
+ 					u32 val)
+ {
+@@ -5136,6 +5336,11 @@ static int airoha_probe(struct platform_
+ 	if (err)
+ 		goto error_napi_stop;
+ 
++	eth->nb.notifier_call = airoha_netdev_event;
++	err = register_netdevice_notifier(&eth->nb);
++	if (err)
++		goto error_napi_stop;
++
+ 	return 0;
+ 
+ error_napi_stop:
+@@ -5180,6 +5385,8 @@ static void airoha_remove(struct platfor
+ 	struct airoha_eth *eth = platform_get_drvdata(pdev);
+ 	int i;
+ 
++	unregister_netdevice_notifier(&eth->nb);
++
+ 	for (i = 0; i < ARRAY_SIZE(eth->qdma); i++) {
+ 		airoha_qdma_stop_napi(&eth->qdma[i]);
+ 		airoha_qdma_tx_cleanup(&eth->qdma[i]);
