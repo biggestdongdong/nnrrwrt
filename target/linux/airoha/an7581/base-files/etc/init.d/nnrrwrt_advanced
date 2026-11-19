@@ -10,6 +10,9 @@
 #                /etc/modules.conf. The module reads the parameter when it
 #                loads, so a change takes effect at the next boot.
 # crashlog_keep  Read by /etc/init.d/crashlog at boot.
+# tcp_congestion_control
+#                TCP congestion control algorithm written to
+#                /proc/sys/net/ipv4/tcp_congestion_control at start and reload.
 #
 
 # shellcheck disable=SC2034
@@ -19,6 +22,8 @@ USE_PROCD=1
 
 THERMAL_DIR="/sys/class/thermal"
 MODULES_CONF="/etc/modules.conf"
+TCP_CONG_FILE="/proc/sys/net/ipv4/tcp_congestion_control"
+TCP_CONG_AVAIL_FILE="/proc/sys/net/ipv4/tcp_available_congestion_control"
 THROTTLE_MIN=60
 THROTTLE_MAX=110
 
@@ -97,15 +102,59 @@ apply_dying_gasp() {
 	rm -f "$tmp"
 }
 
+is_tcp_cong_name() {
+	case "$1" in
+		''|*[!a-zA-Z0-9_-]*) return 1 ;;
+	esac
+	return 0
+}
+
+tcp_cong_available() {
+	local target="$1" item avail
+
+	[ -r "$TCP_CONG_AVAIL_FILE" ] || return 1
+	avail="$(cat "$TCP_CONG_AVAIL_FILE" 2>/dev/null)" || return 1
+	for item in $avail; do
+		[ "$item" = "$target" ] && return 0
+	done
+	return 1
+}
+
+apply_tcp_cong() {
+	local cong="$1"
+
+	[ -w "$TCP_CONG_FILE" ] || return 0
+
+	if ! is_tcp_cong_name "$cong"; then
+		log_warn "tcp_congestion_control '$cong' is invalid, congestion control unchanged"
+		return 0
+	fi
+
+	if ! tcp_cong_available "$cong"; then
+		modprobe "tcp_${cong}" 2>/dev/null || true
+	fi
+
+	if ! tcp_cong_available "$cong"; then
+		log_warn "tcp_congestion_control '$cong' is not available, congestion control unchanged"
+		return 0
+	fi
+
+	printf '%s\n' "$cong" > "$TCP_CONG_FILE" 2>/dev/null ||
+		log_warn "cannot write $TCP_CONG_FILE"
+}
+
 apply_config() {
-	local throttle_temp dying_gasp
+	local throttle_temp dying_gasp tcp_cong
 
 	config_load nnrrwrt_advanced
 	config_get throttle_temp main throttle_temp 95
 	config_get_bool dying_gasp main dying_gasp 1
+	config_get tcp_cong main tcp_congestion_control
+	[ -n "$tcp_cong" ] || config_get tcp_cong main tcp_cong bbr
 
 	apply_throttle_temp "$throttle_temp"
 	apply_dying_gasp "$dying_gasp"
+	apply_tcp_cong "$tcp_cong"
 }
 
 start_service() {
