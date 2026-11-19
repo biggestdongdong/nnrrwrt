@@ -7,9 +7,11 @@ On XG-040G-MD these are 0xffff/0x02c0 for total usage, 0xffff/0x0016
 per channel and 0xffff/0x0002 per queue. Hardware forwarding therefore
 uses bounds unrelated to the allocated pool.
 
-Initialize the XG-040G-MD factory LAN SRAM bounds after LMGR succeeds,
-using the completed poll value to select AN7581 QDMA0 with 16K SRAM
-descriptors. This keeps allocation and timeout failures ahead of the new
+Initialize the XG-040G-MD factory SRAM bounds after LMGR succeeds,
+using the completed poll value to select AN7581 QDMA blocks with 16K
+SRAM descriptors (both QDMA0/LAN and QDMA1/WAN, matching factory
+qdma_lan.ko and qdma_wan.ko). This keeps allocation and timeout failures
+ahead of the new
 writes, and avoids an extra LMGR read or persistent configuration state.
 Program all normal and half-sized DEI bounds before enabling dynamic
 recalculation. Preserve unrelated control bits and the existing drop
@@ -45,7 +47,7 @@ Signed-off-by: grislux55 <jebchou.hg@gmail.com>
 +static void airoha_qdma_init_lan_congestion(struct airoha_qdma *qdma,
 +					    u32 lmgr_cfg)
 +{
-+	/* XG-040G-MD factory bounds for the AN7581 16K LAN SRAM pool. */
++	/* XG-040G-MD factory bounds for AN7581 16K SRAM pools (QDMA0 & QDMA1). */
 +	static const struct {
 +		u16 max;
 +		u16 min;
@@ -57,7 +59,7 @@ Signed-off-by: grislux55 <jebchou.hg@gmail.com>
 +	u32 mask;
 +	int i;
 +
-+	if (!airoha_is_7581(qdma->eth) || qdma != &qdma->eth->qdma[0])
++	if (!airoha_is_7581(qdma->eth))
 +		return;
 +
 +	/* Use the completed LMGR configuration from HFWD initialization. */

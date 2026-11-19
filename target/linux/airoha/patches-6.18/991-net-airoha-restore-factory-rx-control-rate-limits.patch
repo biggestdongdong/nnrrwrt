@@ -1,16 +1,16 @@
 From: grislux55 <jebchou.hg@gmail.com>
 Subject: [PATCH] net: airoha: restore factory RX control-ring limits
 
-The AN7581 factory qdma_lan.ko and qdma_wan.ko initialize all 32 RX
-ring rate limits in packet mode, then switch the ingress meter from TRTCM
-to rate-limit mode. The XG-040G-MD startup script tightens the control
-rings to 1000pps and leaves LAN ring 11 at 4000pps while WAN ring 11 is
-also set to 1000pps.
+The AN7581 factory qdma_lan.ko and qdma_wan.ko switch the ingress meter
+from TRTCM mode to independent per-ring rate-limit mode before
+programming all 32 RX ring rate limits in packet mode. Switching mode
+first is required because TRTCM mode shares each even/odd meter's
+tick_sel bit, which otherwise clobbers the even ring's tick source.
 
-Program the final factory ring values during QDMA initialization. Rings
-0, 2, 8 and 9 use the slow tick; the remaining rings use the fast tick.
-Use the programmed packet rate as the bucket size, matching the factory
-SDK packet-mode calculation.
+Upstream airoha_eth routes all normal CPU RX traffic through ring 0
+(2048 descriptors) instead of ring 1, so keep ring 0 at 1000000pps on
+the fast tick while applying the factory control-ring rates to the
+control rings (2, 3, 4, 6, 7, 8, 9, and 11).
 
 The 32-entry table and final mode write were read from each factory
 module's .rodata at offset 0x670 and from the startup script. The setup
@@ -53,25 +53,31 @@ Signed-off-by: grislux55 <jebchou.hg@gmail.com>
  
  	/* disable qdma rx delay interrupt */
  	for (i = 0; i < ARRAY_SIZE(qdma->q_rx); i++) {
-@@ -3743,6 +3748,9 @@ static int airoha_qdma_init_rl_config(struct airoha_qdma *qdma, int queue_id,
+@@ -3743,6 +3748,13 @@ static int airoha_qdma_init_rl_config(struct airoha_qdma *qdma, int queue_id,
  	enum trtcm_param mode = TRTCM_METER_MODE;
  	int err;
  
-+	if (airoha_is_7581(qdma->eth) && queue_id == 9)
-+		tick_sel = true;
++	if (airoha_is_7581(qdma->eth)) {
++		if (queue_id == 0)
++			tick_sel = false;
++		else if (queue_id == 9)
++			tick_sel = true;
++	}
 +
  	mode |= unit == TRTCM_PACKET_UNIT ? TRTCM_PKT_MODE : 0;
  	err = airoha_qdma_set_rl_config(qdma, queue_id, REG_INGRESS_TRTCM_CFG,
  					enable, mode);
-@@ -3753,6 +3761,48 @@ static int airoha_qdma_init_rl_config(struct airoha_qdma *qdma, int queue_id,
+@@ -3753,6 +3765,52 @@ static int airoha_qdma_init_rl_config(struct airoha_qdma *qdma, int queue_id,
  					 tick_sel, TRTCM_TICK_SEL);
  }
  
 +static int airoha_qdma_set_factory_rx_limits(struct airoha_qdma *qdma)
 +{
-+	/* Final XG-040G-MD factory limits in packets per second. */
++	/* XG-040G-MD RX limits in packets per second. Ring 0 carries normal
++	 * RX data in upstream airoha_eth and must remain unthrottled.
++	 */
 +	static const u32 limits[AIROHA_NUM_RX_RING] = {
-+		4000, 1000000, 4000, 4000,
++		1000000, 1000000, 4000, 4000,
 +		4000, 1000000, 1000, 1000,
 +		1000, 1000, 1000000, 4000,
 +		1000000, 1000000, 1000000, 1000000,
@@ -85,6 +91,11 @@ Signed-off-by: grislux55 <jebchou.hg@gmail.com>
 +
 +	if (!airoha_is_7581(eth))
 +		return 0;
++
++	/* Enable independent per-ring rate-limit mode before programming
++	 * rings so even/odd rings do not share a TRTCM tick_sel bit.
++	 */
++	airoha_qdma_set(qdma, REG_INGRESS_TRTCM_CFG, INGRESS_TRTCM_MODE_MASK);
 +
 +	for (i = 0; i < ARRAY_SIZE(limits); i++) {
 +		u32 rate = limits[i];
@@ -102,9 +113,6 @@ Signed-off-by: grislux55 <jebchou.hg@gmail.com>
 +		if (err)
 +			return err;
 +	}
-+
-+	/* The factory enables ingress rate-limit mode after programming rings. */
-+	airoha_qdma_set(qdma, REG_INGRESS_TRTCM_CFG, INGRESS_TRTCM_MODE_MASK);
 +
 +	return 0;
 +}
